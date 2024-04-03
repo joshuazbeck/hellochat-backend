@@ -124,7 +124,7 @@ app.get("/session/generate", (req, res) => {
     }
   });
 });
-io.of("/v1").on("connection", (socket, data) => {
+io.on("connection", (socket, data) => {
   // Send a notification to the user room that another user joined
   socket.on(sessionRoom, (session_id) => {
     if (username) {
