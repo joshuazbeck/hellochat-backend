@@ -106,7 +106,7 @@ app.get("/session/get", (req, res) => {
 app.get("/session/active", (req, res) => {
   res.json({ code: 200, socket_ids: io.of("/v1").sockets });
 });
-app.get("/session/generate", (req, res) => {
+app.post("/session/generate", (req, res) => {
   const { name, colorHex } = req.body;
   if (name == null) {
     res.json({ code: 403, error: "No name field" });
@@ -257,7 +257,7 @@ function getMessage(id, callback) {
     } else if (row) {
       callback({
         code: 200,
-        message: { id: row.id, text: row.text },
+        message: { id: row.id, message: row.text },
       });
     } else {
       callback({ code: 200, message: null });
