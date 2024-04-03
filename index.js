@@ -127,7 +127,7 @@ app.post("/session/generate", (req, res) => {
 io.on("connection", (socket, data) => {
   // Send a notification to the user room that another user joined
   socket.on(sessionRoom, (session_id) => {
-    if (username) {
+    if (session_id) {
       attachToSession(socket.id, session_id, (response) => {
         if (response.error) {
           console.log("There was an error: " + response.error);
