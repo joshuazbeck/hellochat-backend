@@ -245,7 +245,7 @@ function saveMessage(message, sessionId, callback) {
       }
     );
   } catch (ex) {
-    callback({ error: err });
+    callback({ error: ex });
   }
 }
 
