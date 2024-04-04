@@ -8,16 +8,15 @@ const { Server } = require("socket.io");
 const io = new Server(server);
 
 var bodyParser = require("body-parser");
-
 app.use(bodyParser.json());
 
+const baseAPI = "/chatapi/v1";
+
 let db = new sqlite3.Database(":memory:", (err) => {
-  // if (err) {
-  //   return console.error(err.message);
-  // }
   console.log("Connected to the in-memory SQlite database.");
 });
 
+// Create the temporary SQlite table
 db.serialize(() => {
   db.run(`CREATE TABLE messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,20 +27,22 @@ db.serialize(() => {
   db.run(`CREATE TABLE sessions (
     session_id INTEGER PRIMARY KEY AUTOINCREMENT,
     color_hex VARCHAR(6),
-    name VARCHAR CHARACTER
+    name VARCHAR CHARACTER,
     socket_id VARCHAR(255)
   )`);
 });
 
+// Listen on port 3000
 server.listen(3000, () => {
   console.log("listening on *:3000");
 });
 
 const messageRoom = "send_message";
-const typingRoom = "typing";
 const sessionRoom = "add_session";
 
-app.get("/message/get", (req, res) => {
+// Get a message by ID
+app.post(baseAPI + "/message/get", (req, res) => {
+  console.log("Entering '/message/get'");
   const { id } = req.body;
   if (id == null) {
     res.json({ code: 403, error: "No id field" });
@@ -55,7 +56,11 @@ app.get("/message/get", (req, res) => {
     }
   });
 });
-app.get("/message/list", (req, res) => {
+
+// Get all the messages
+app.get(baseAPI + "/message/list", (req, res) => {
+  console.log("Entering '/message/list'");
+
   getMessages((results) => {
     if (results.error) {
       res.json({ code: 401, error: results.error });
@@ -66,7 +71,11 @@ app.get("/message/list", (req, res) => {
     }
   });
 });
-app.post("/message/post", (req, res) => {
+
+// Post a message
+app.post(baseAPI + "/message/post", (req, res) => {
+  console.log("Entering '/message/post'");
+
   const { text, sessionId } = req.body;
 
   if (text == null) {
@@ -80,7 +89,6 @@ app.post("/message/post", (req, res) => {
 
   saveMessage(text, sessionId, (response) => {
     if (response.id) {
-      // Emit to socket IO
       io.emit(messageRoom, response.id);
       res.json({ code: 200 });
     } else {
@@ -89,7 +97,10 @@ app.post("/message/post", (req, res) => {
   });
 });
 
-app.get("/session/get", (req, res) => {
+// Get a sessoin by ID
+app.post(baseAPI + "/session/get", (req, res) => {
+  console.log("Entering '/session/get'");
+
   const { id } = req.body;
   if (id == null) {
     res.json({ code: 403, error: "No id field" });
@@ -103,10 +114,17 @@ app.get("/session/get", (req, res) => {
     }
   });
 });
-app.get("/session/active", (req, res) => {
+
+app.get(baseAPI + "/session/active", (req, res) => {
+  console.log("Entering '/session/active'");
+
   res.json({ code: 200, socket_ids: io.of("/v1").sockets });
 });
-app.post("/session/generate", (req, res) => {
+
+// Generate the session
+app.post(baseAPI + "/session/generate", (req, res) => {
+  console.log("Entering '/session/generate'");
+
   const { name, colorHex } = req.body;
   if (name == null) {
     res.json({ code: 403, error: "No name field" });
@@ -124,21 +142,17 @@ app.post("/session/generate", (req, res) => {
     }
   });
 });
-io.on("connection", (socket, data) => {
-  // Send a notification to the user room that another user joined
+
+// Connect to the socket
+io.on("connection", (socket) => {
+  // On capturing a session id, attach the socket to the session id specified
   socket.on(sessionRoom, (session_id) => {
     if (session_id) {
       attachToSession(socket.id, session_id, (response) => {
         if (response.error) {
           console.log("There was an error: " + response.error);
         } else {
-          console.log(
-            "We attched the socket ID: " +
-              socket.id +
-              " to the session ID: " +
-              data.sessionId
-          );
-          io.emit(userRoom, data.sessionId);
+          io.emit(sessionRoom, session_id);
           // Recieve from the message room
         }
       });
@@ -152,14 +166,13 @@ io.on("connection", (socket, data) => {
   });
 });
 
-// CREATE SOCKET CHANNELS TO:
-
-// RECIEVE TYPING FROM USER ID AND BROADCAST (DISPLAY AND SEND EVERY ONE SECOND ON FRONT END)
-// ON DISCONNECT, REMOVE USERS STATUS (PROBABLY NOT NECESSARY AS THE ACTIVE VARIABLE ONLY CHANGES THEF RONT END)
+// Helper methods ------>
 
 function getSession(session_id, callback) {
+  console.log("Checking session_id" + session_id);
   var sql = db.prepare("SELECT * FROM sessions WHERE session_id=?");
   sql.get([session_id], (err, row) => {
+    console.log("Checking session_id" + session_id + " " + row + " " + err);
     if (err) {
       callback({ code: 403, error: err });
     } else if (row) {
@@ -168,12 +181,12 @@ function getSession(session_id, callback) {
         session: {
           session_id: row.session_id,
           name: row.name,
-          colorHex: row.color_hex,
+          color_hex: row.color_hex,
           socket_id: row.socket_id,
         },
       });
     } else {
-      callback({ code: 200, message: null });
+      callback({ code: 403, error: "Unable to get from the DB" });
     }
   });
 }
@@ -202,7 +215,7 @@ function getSessionBySocketID(socket_id, callback) {
 
 function attachToSession(socketId, sessionId, callback) {
   db.run(
-    "UPDATE sessions SET socket_id = ? WHERE sessionId = ?",
+    "UPDATE sessions SET socket_id=? WHERE session_id = ?",
     [socketId, sessionId],
     function (err) {
       if (err) {
@@ -216,9 +229,9 @@ function attachToSession(socketId, sessionId, callback) {
 
 function generateSession(name, colorHex, callback) {
   db.run(
-    "INSERT INTO sessions (color_hex, name) VALUES (?, ?)",
-    colorHex,
+    "INSERT INTO sessions (name, color_hex) VALUES (?, ?)",
     name,
+    colorHex,
     function (err) {
       if (err) {
         callback({ error: err });
@@ -231,20 +244,23 @@ function generateSession(name, colorHex, callback) {
 
 function saveMessage(message, sessionId, callback) {
   try {
+    console.log("Saving the message");
     db.run(
       "INSERT INTO messages (text, session_id) VALUES (?, ?)",
       message,
       sessionId,
-      hexColor,
       function (err) {
         if (err) {
+          console.log("There was an error: " + err);
           callback({ error: err });
         } else {
+          console.log("We got the is of the message ${this.lastID}");
           callback({ id: this.lastID });
         }
       }
     );
   } catch (ex) {
+    console.log("WE HAD AN ERROR ON INSERTMESSAGE: " + ex);
     callback({ error: ex });
   }
 }
@@ -257,7 +273,7 @@ function getMessage(id, callback) {
     } else if (row) {
       callback({
         code: 200,
-        message: { id: row.id, message: row.text },
+        message: { id: row.id, text: row.text, session_id: row.session_id },
       });
     } else {
       callback({ code: 200, message: null });
@@ -277,8 +293,7 @@ function getMessages(callback) {
       messages.push({
         id: row.id,
         text: row.text,
-        color: row.color_hex,
-        userId: row.user_session_id,
+        session_id: row.session_id,
       });
     });
     callback({ messages: messages });
@@ -286,72 +301,3 @@ function getMessages(callback) {
 }
 
 function getCurrentUsers() {}
-// // Connect to the MESSAGE SOCKET
-
-//   // Recieve a typing notification
-//   socket.on(typingRoom, (typing) => {
-//     console.log("TYPING " + typing);
-//     io.emit(typingRoom, msg);
-//   });
-
-//   socket.on("disconnect", () => {
-//     console.log("user disconnected");
-//   });
-// });
-
-// io.on(messageRoom, (socket) => {
-//   console.log(socket);
-// });
-
-// // Get the number of connected users
-// app.get("/user_count", (req, res) => {
-//   const count2 = io.of("/").sockets.size;
-//   res.status(200).json(count2);
-// });
-
-// // Send a message
-// app.get("/send", (req, res) => {
-//   var message = {
-//     msg: "hello",
-//     time: "now",
-//     color: "red",
-//   };
-// });
-
-// app.get("/broadcast", (req, res) => {});
-// // var room = io.sockets.adapter.rooms['my_room'];
-// // room.length;
-
-// //io.sockets.adapter.rooms[room].length;
-
-// // API send a message (msg, time, color) (backend is socket)
-// // Connect to the message socket
-// // Send a notification that the user is typing
-// // Get all previous messages
-
-// // Create a API endpoint that gets all the collected users
-// // Create a connected socket that captures user + color connect + disconnect
-
-// // user session
-// // message with id
-
-// Have to have a username to create a new session (will create duplicates)
-// Need to have a session id to create a new message
-// We read only the active sessions (the users are persistant)
-
-// POST to get a session ID
-
-// Workflow
-
-// Generate a sessionID
-
-// Emit it to the session room to connect the socketId and provide the session_id as data
-
-// Send future messages through the API with the sessionID
-
-// View all active socketIDs to see active users
-// Search based off of the table to get color, name, etc.
-
-// Get individual users based on the session ID to render chat images
-
-// Get message color based off of the session ID
