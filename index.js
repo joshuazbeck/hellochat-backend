@@ -10,6 +10,8 @@ const io = new Server(server);
 var bodyParser = require("body-parser");
 app.use(bodyParser.json());
 
+console.log("Initializing the app");
+
 const baseAPI = "/chatapi/v1";
 
 let db = new sqlite3.Database(":memory:", (err) => {
