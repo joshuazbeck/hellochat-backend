@@ -186,7 +186,7 @@ function getSession(session_id, callback) {
         },
       });
     } else {
-      callback({ code: 403, error: "Unable to get from the DB" });
+      callback({ code: 403, error: "Unable to get the session from the DB" });
     }
   });
 }
